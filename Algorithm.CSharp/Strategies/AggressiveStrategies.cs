@@ -34,6 +34,10 @@ namespace QuantConnect.Algorithm.CSharp.Strategies
         protected abstract string[] Tickers { get; }
         protected virtual int Lookback => 252;
         protected virtual decimal Exposure => 0.98m;
+        /// <summary>
+        /// Maximum leverage the account allows. Above 2x this models portfolio margin or futures, not a Reg T account.
+        /// </summary>
+        protected virtual decimal AccountLeverage => 2m;
 
         public override void Initialize()
         {
@@ -41,6 +45,7 @@ namespace QuantConnect.Algorithm.CSharp.Strategies
             foreach (var ticker in Tickers)
             {
                 var symbol = ticker == "SPY" ? Spy : AddEquity(ticker, Resolution.Daily).Symbol;
+                Securities[symbol].SetLeverage(AccountLeverage);
                 _momentum[symbol] = ROC(symbol, Lookback, Resolution.Daily);
             }
             SetWarmUp(Lookback, Resolution.Daily);
@@ -91,6 +96,26 @@ namespace QuantConnect.Algorithm.CSharp.Strategies
     }
 
     /// <summary>
+    /// The ETF momentum rotation at 3x, in an account that allows up to 5x
+    /// </summary>
+    public class TripleMomentumAlgorithm : RotationStrategyBase
+    {
+        protected override string[] Tickers => new[] { "SPY", "QQQ", "IWM", "EEM" };
+        protected override decimal Exposure => 3m;
+        protected override decimal AccountLeverage => 5m;
+    }
+
+    /// <summary>
+    /// The ETF momentum rotation at 4x, in an account that allows up to 6x
+    /// </summary>
+    public class QuadMomentumAlgorithm : RotationStrategyBase
+    {
+        protected override string[] Tickers => new[] { "SPY", "QQQ", "IWM", "EEM" };
+        protected override decimal Exposure => 4m;
+        protected override decimal AccountLeverage => 6m;
+    }
+
+    /// <summary>
     /// ETF momentum rotation with a 3-month lookback, so it reacts faster to new leaders
     /// </summary>
     public class FastMomentumAlgorithm : RotationStrategyBase
@@ -116,10 +141,13 @@ namespace QuantConnect.Algorithm.CSharp.Strategies
         private Symbol _qqq;
         private SimpleMovingAverage _sma;
 
+        protected virtual decimal Exposure => 1.9m;
+        protected virtual decimal AccountLeverage => 2m;
+
         public override void Initialize()
         {
             base.Initialize();
-            _qqq = AddEquity("QQQ", Resolution.Daily).Symbol;
+            _qqq = AddEquity("QQQ", Resolution.Daily, leverage: AccountLeverage).Symbol;
             _sma = SMA(_qqq, 200, Resolution.Daily);
             SetWarmUp(200, Resolution.Daily);
         }
@@ -131,13 +159,22 @@ namespace QuantConnect.Algorithm.CSharp.Strategies
             var price = Securities[_qqq].Price;
             if (price > _sma && !Portfolio.Invested)
             {
-                SetHoldings(_qqq, 1.9m);
+                SetHoldings(_qqq, Exposure);
             }
             else if (price < _sma && Portfolio.Invested)
             {
                 Liquidate(_qqq);
             }
         }
+    }
+
+    /// <summary>
+    /// 3x QQQ while QQQ is above its 200-day SMA (roughly TQQQ with a trend filter), in an account that allows up to 5x
+    /// </summary>
+    public class TripleQqqTrendAlgorithm : LeveragedQqqTrendAlgorithm
+    {
+        protected override decimal Exposure => 3m;
+        protected override decimal AccountLeverage => 5m;
     }
 
     /// <summary>
